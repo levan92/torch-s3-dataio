@@ -1,5 +1,6 @@
 import io
 import os
+import random
 
 import boto3
 from tqdm import tqdm
@@ -75,9 +76,23 @@ def trivial_batch_collator(batch):
     return batch
 
 
+def seed_all_rng(seed=None):
+    """
+    Set the random seed for the RNG in torch, numpy and python.
+
+    Args:
+        seed (int): if None, will use a strong random seed.
+    """
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    random.seed(seed)
+    os.environ["PYTHONHASHSEED"] = str(seed)
+
+
 def worker_init_reset_seed(worker_id):
     initial_seed = torch.initial_seed() % 2 ** 31
-    print(worker_id, initial_seed)
+    print(worker_id, initial_seed + worker_id)
+    seed_all_rng(initial_seed + worker_id)
 
 
 if __name__ == "__main__":
@@ -92,3 +107,7 @@ if __name__ == "__main__":
     )
 
     dl_iter = iter(data_loader)
+
+    print("starting iter")
+    data_point = next(dl_iter)
+    print(len(data_point))

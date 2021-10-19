@@ -1,0 +1,6 @@
+boto3
+tqdm
+numpy
+Pillow
+torch
+torchvision

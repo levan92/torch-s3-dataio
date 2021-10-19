@@ -80,14 +80,15 @@ def worker_init_reset_seed(worker_id):
     print(worker_id, initial_seed)
 
 
-s3_ds = S3MapDataset()
+if __name__ == "__main__":
+    s3_ds = S3MapDataset()
 
-data_loader = data.DataLoader(
-    s3_ds,
-    batch_size=2,
-    num_workers=2,
-    collate_fn=trivial_batch_collator,
-    worker_init_fn=worker_init_reset_seed,
-)
+    data_loader = data.DataLoader(
+        s3_ds,
+        batch_size=2,
+        num_workers=2,
+        collate_fn=trivial_batch_collator,
+        worker_init_fn=worker_init_reset_seed,
+    )
 
-dl_iter = iter(data_loader)
+    dl_iter = iter(data_loader)

@@ -10,6 +10,8 @@ from PIL import Image
 
 import torch
 import torch.utils.data as data
+from torch.utils.data.distributed import DistributedSampler
+from torch.distributed import get_world_size
 
 
 def pil2bgr_numpy(image):
@@ -61,9 +63,7 @@ class S3MapDataset(data.Dataset):
         with io.BytesIO() as f:
             obj.download_fileobj(f)
             img = Image.open(f)
-            print(img)
             np_img = pil2bgr_numpy(img)
-        print(np_img.shape)
         return np_img
 
 
@@ -94,8 +94,16 @@ def worker_init_reset_seed(worker_id):
 
 
 class Trainer:
-    def __init__(self, s3_info):
+    def __init__(self, s3_info, is_dist=False):
+        world_size = get_world_size()
+        print("world size:", world_size)
+        if world_size > 1:
+            is_dist = True
+        else:
+            is_dist = False
         s3_ds = S3MapDataset(s3_info)
+
+        sampler = DistributedSampler(s3_ds) if is_dist else None
 
         data_loader = data.DataLoader(
             s3_ds,
@@ -103,6 +111,7 @@ class Trainer:
             num_workers=2,
             collate_fn=trivial_batch_collator,
             worker_init_fn=worker_init_reset_seed,
+            sampler=sampler,
         )
         print(len(s3_ds))
 
@@ -127,8 +136,8 @@ def main(rank):
 
     trainer = Trainer(s3_info)
     dp = next(trainer.dl_iter)
-    print(len(dp))
+    print("BATCH SIZE:", len(dp))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main(0)

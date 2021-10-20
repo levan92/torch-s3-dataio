@@ -28,30 +28,27 @@ def pil2bgr_numpy(image):
     return image
 
 
-AWS_ENDPOINT_URL = os.environ.get("AWS_ENDPOINT_URL", "https://play.min.io")
-AWS_ACCESS_KEY = os.environ.get("AWS_ACCESS_KEY")
-AWS_SECRET_ACCESS = os.environ.get("AWS_SECRET_ACCESS")
+def get_bucket(s3_info):
+    s3_resource = boto3.resource(
+        "s3",
+        endpoint_url=s3_info["endpoint_url"],
+        aws_access_key_id=s3_info["aws_access_key_id"],
+        aws_secret_access_key=s3_info["aws_secret_access_key"],
+        region_name=s3_info["region_name"],
+    )
+    bucket = s3_resource.Bucket(s3_info["bucket"])
+    return bucket
 
 
 class S3MapDataset(data.Dataset):
-    def __init__(self, bucket="coco", imgroot="coco_mini/images/"):
-        assert AWS_ACCESS_KEY is not None
-        print(AWS_ENDPOINT_URL)
-        print(AWS_ACCESS_KEY)
-        print(AWS_SECRET_ACCESS)
-        s3_resource = boto3.resource(
-            "s3",
-            endpoint_url=AWS_ENDPOINT_URL,
-            aws_access_key_id=AWS_ACCESS_KEY,
-            aws_secret_access_key=AWS_SECRET_ACCESS,
-            region_name="us-east-1",
-        )
-        self.bucket = s3_resource.Bucket(bucket)
+    def __init__(self, s3_info):
+        bucket = get_bucket(s3_info)
         self.images = [
             obj.key
-            for obj in tqdm(self.bucket.objects.filter(Prefix=imgroot))
+            for obj in tqdm(bucket.objects.filter(Prefix=s3_info["imgroot"]))
             if obj.key.endswith(".jpg")
         ]
+        self.s3_info = s3_info
 
     def __len__(self):
         return len(self.images)
@@ -59,7 +56,8 @@ class S3MapDataset(data.Dataset):
     def __getitem__(self, idx):
         path = self.images[idx]
         print("path", path)
-        obj = self.bucket.Object(path)
+        bucket = get_bucket(self.s3_info)
+        obj = bucket.Object(path)
         with io.BytesIO() as f:
             obj.download_fileobj(f)
             img = Image.open(f)
@@ -95,19 +93,42 @@ def worker_init_reset_seed(worker_id):
     seed_all_rng(initial_seed + worker_id)
 
 
-if __name__ == "__main__":
-    s3_ds = S3MapDataset()
+class Trainer:
+    def __init__(self, s3_info):
+        s3_ds = S3MapDataset(s3_info)
 
-    data_loader = data.DataLoader(
-        s3_ds,
-        batch_size=2,
-        num_workers=2,
-        collate_fn=trivial_batch_collator,
-        worker_init_fn=worker_init_reset_seed,
-    )
+        data_loader = data.DataLoader(
+            s3_ds,
+            batch_size=2,
+            num_workers=2,
+            collate_fn=trivial_batch_collator,
+            worker_init_fn=worker_init_reset_seed,
+        )
+        print(len(s3_ds))
 
-    dl_iter = iter(data_loader)
+        self.dl_iter = iter(data_loader)
 
-    print("starting iter")
-    data_point = next(dl_iter)
-    print(len(data_point))
+
+def main(rank):
+    print(f"From rank {rank}")
+
+    AWS_ENDPOINT_URL = os.environ.get("AWS_ENDPOINT_URL", "https://play.min.io")
+    AWS_ACCESS_KEY = os.environ.get("AWS_ACCESS_KEY")
+    AWS_SECRET_ACCESS = os.environ.get("AWS_SECRET_ACCESS")
+
+    s3_info = {
+        "endpoint_url": AWS_ENDPOINT_URL,
+        "aws_access_key_id": AWS_ACCESS_KEY,
+        "aws_secret_access_key": AWS_SECRET_ACCESS,
+        "region_name": "us-east-1",
+        "bucket": "coco",
+        "imgroot": "coco_mini/images/",
+    }
+
+    trainer = Trainer(s3_info)
+    dp = next(trainer.dl_iter)
+    print(len(dp))
+
+
+if __name__ == '__main__':
+    main(0)
